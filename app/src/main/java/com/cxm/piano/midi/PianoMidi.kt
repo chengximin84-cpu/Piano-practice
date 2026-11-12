@@ -205,6 +205,7 @@ object PianoMidi {
     }
 
     fun disconnect() {
+        if (link.value.status == LinkStatus.DISCONNECTED && device == null) return
         closeDevice()
         addLog("已断开")
     }

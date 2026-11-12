@@ -35,6 +35,7 @@ import androidx.compose.ui.unit.sp
 import com.cxm.piano.audio.Synth
 import com.cxm.piano.data.SongEntry
 import com.cxm.piano.data.SongLibrary
+import com.cxm.piano.midi.LinkStatus
 import com.cxm.piano.midi.PianoMidi
 import com.cxm.piano.midi.Song
 import com.cxm.piano.practice.PracticeScreen
@@ -54,7 +55,6 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         if (savedInstanceState == null) handleIntent(intent)
-        if (hasBlePermissions(this)) PianoMidi.reconnectLast()
 
         setContent {
             MaterialTheme(colorScheme = darkColorScheme(primary = Palette.right, background = Palette.bg, surface = Palette.panel)) {
@@ -137,6 +137,13 @@ class MainActivity : ComponentActivity() {
             .onFailure { toast("导入失败：${it.message}") }
     }
 
+    override fun onStart() {
+        super.onStart()
+        // Reconnect when the app comes back; released in onStop so nothing stays
+        // linked (and shown as "已连接" by the system) while the app is closed.
+        if (hasBlePermissions(this)) PianoMidi.reconnectLast()
+    }
+
     override fun onPause() {
         super.onPause()
         PracticeStats.flush()
@@ -144,8 +151,24 @@ class MainActivity : ComponentActivity() {
 
     override fun onStop() {
         super.onStop()
+        // Cancel queued toasts so nothing keeps showing after the app is closed.
+        lastToast?.cancel()
+        lastToast = null
         if (song == null) Synth.stop()
+        // Skip while a connection is still in flight (e.g. the system pairing dialog
+        // briefly stops us); onDestroy releases anything left behind.
+        if (PianoMidi.link.value.status == LinkStatus.CONNECTED) PianoMidi.disconnect()
     }
 
-    private fun toast(msg: String) = Toast.makeText(this, msg, Toast.LENGTH_LONG).show()
+    override fun onDestroy() {
+        super.onDestroy()
+        if (!isChangingConfigurations) PianoMidi.disconnect()
+    }
+
+    private var lastToast: Toast? = null
+
+    private fun toast(msg: String) {
+        lastToast?.cancel()
+        lastToast = Toast.makeText(this, msg, Toast.LENGTH_SHORT).apply { show() }
+    }
 }
